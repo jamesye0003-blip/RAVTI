@@ -1,0 +1,109 @@
+# RAVTI default experiment configuration (paths are relative to project root unless absolute)
+experiment_name: ravti_default
+seed: 42
+
+paths:
+  project_root: null  # null = auto-detect from package
+  data_root: data
+  cache_dir: data/cache
+  index_dir: data/indices
+  metadata_db: data/metadata/ravti.sqlite
+  local_image_datasets: []  # e.g. ["E:/Datasets/Image/your_inat_subset"]
+
+models:
+  sdxl_model_id: stabilityai/stable-diffusion-xl-base-1.0
+  vae_model_id: null  # null = bundled with SDXL
+  # Taxonomic text stream (BioCLIP ViT-B/16 family)
+  bioclip_text_hub: hf-hub:imageomics/bioclip-vit-b-16-inat-only
+  # Visual reference stream (BioCLIP 2 ViT-L/14 image tower)
+  bioclip2_image_hub: hf-hub:imageomics/bioclip-2
+  torch_dtype: float16
+
+retrieval:
+  k_default: 3
+  embedding_key: bioclip_text  # which embedding backs the FAISS index
+  index_name: species_index
+
+training:
+  output_dir: outputs/train_runs
+  save_every_steps: 50
+  max_train_steps: 1000
+  image_size: 512
+  prompt_template: "wildlife photograph of {species}, natural lighting, sharp focus"
+  cmc_train_default: 0.5
+  # Kept for readability; effective batch size is ``dataset.dataloader.batch_size``.
+  train_batch_size: 1
+  gradient_accumulation_steps: 1
+  learning_rate: 1.0e-5
+  mixed_precision: bf16
+  # Unified architecture always uses projection + decoupled cross-attention.
+  # This switch only controls whether to inject retrieved reference-image condition.
+  use_reference_condition: true
+  log_every: 10
+  # Projection width for injected condition tokens
+  sdxl_hidden_size: 2048
+  # Reliability-aware gating (CMC in [0,1]); if null, use fixed lambdas
+  cmc_beta: 2.0
+  lambda_tax_base: 0.35
+  lambda_ref_base: 0.25
+
+dataset:
+  # Unified provider switch: inaturalist_mini | fishnet | treeoflife_10m
+  # Offline CI: set env RAVTI_SYNTHETIC_DATA=1 to bypass real data.
+  provider: inaturalist_mini
+  dataloader:
+    batch_size: 1
+    num_workers: 0
+    shuffle: true
+    pin_memory: true
+  synthetic:
+    num_samples: 128
+  inaturalist:
+    # Parent directory for torchvision iNat; actual images live under <root>/<version>/
+    root: data/datasets/inaturalist
+    version: 2021_train_mini
+    download: true
+  fishnet:
+    # Example: E:/Datasets/Image/fishnet_extracted  (class folders = species)
+    root: data/datasets/fishnet
+    layout: imagefolder
+    manifest_csv: null
+    image_column: image_path
+    species_column: species
+    taxonomy_column: null
+  treeoflife:
+    hf_repo: imageomics/TreeOfLife-10M
+    split: train
+    streaming: true
+    trust_remote_code: false
+    image_keys: ["image", "jpg", "bytes"]
+    text_keys: ["taxonomy", "scientific_name", "species", "canonicalName", "text"]
+
+evaluation:
+  cas_classifier: null  # path to checkpoint; null = stub metric
+  bertscore_lang: en
+  llm_provider: openai  # stub hooks; requires API keys for real runs
+
+baselines:
+  b1_sdxl_zero_shot:
+    use_taxonomy: false
+    use_retrieval: false
+  b2_taxaadapter_style:
+    use_taxonomy: true
+    use_retrieval: false
+    lambda_ref: 0.0
+
+ablation:
+  taxonomy_only:
+    use_taxonomy: true
+    use_retrieval: false
+  rag_only:
+    use_taxonomy: false
+    use_retrieval: true
+  unified:
+    use_taxonomy: true
+    use_retrieval: true
+
+sweeps:
+  cmc_values: [0.0, 0.25, 0.5, 0.75, 1.0]
+  k_values: [1, 3, 5]

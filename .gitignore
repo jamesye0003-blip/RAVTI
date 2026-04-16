@@ -1,0 +1,66 @@
+# --- Python / tooling ---
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+.coverage
+htmlcov/
+coverage.xml
+
+# --- Secrets & local env ---
+.env
+.env.*
+!.env.example
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+
+# --- Model weights & checkpoints (large / non-source) ---
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+checkpoints/
+
+# --- Hugging Face & torch caches (often huge) ---
+.huggingface/
+**/.cache/huggingface/
+
+# --- Project outputs (logs, tables, saved adapters under outputs/) ---
+outputs/
+wandb/
+runs/
+*.log
+
+# --- Data: downloads, caches, built indices, local DBs (keep YAML + code only) ---
+data/cache/
+data/datasets/
+data/metadata/*.sqlite
+data/metadata/*.db
+data/indices/
+data/parquet/*.parquet
+
+# --- Dataset archives (if extracted under repo) ---
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+
+# --- OS & editors ---
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+.cursor/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
