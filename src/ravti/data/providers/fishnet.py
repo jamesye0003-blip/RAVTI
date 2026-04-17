@@ -47,6 +47,7 @@ class FishNetImageFolderDataset(Dataset):
             "species_text": species_text,
             "taxonomy_line": species_text,
             "dataset": "fishnet",
+            "sample_id": f"fishnet:{path}",
             "image_path": str(path),
             "index": index,
         }
@@ -84,6 +85,7 @@ class FishNetManifestCSVDataset(Dataset):
             "species_text": species,
             "taxonomy_line": tax_line,
             "dataset": "fishnet",
+            "sample_id": f"fishnet:{path}",
             "image_path": str(path),
             "index": index,
         }

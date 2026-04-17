@@ -79,6 +79,7 @@ class SDXLAdapterTrainer:
         prompt: str,
         taxon_string: str,
         ref_images: Optional[list],
+        ref_vector: Optional[torch.Tensor],
         cmc: float,
         device: torch.device,
         dtype: torch.dtype,
@@ -112,7 +113,13 @@ class SDXLAdapterTrainer:
         with torch.no_grad():
             tax = self.tax_encoder([taxon_string]).to(device=device).clone()
             ref = None
-            if self.cfg.use_reference_condition and ref_images:
+            # If reference vector is provided, use it
+            if self.cfg.use_reference_condition and ref_vector is not None:
+                ref = ref_vector.to(device=device).clone()
+                if ref.ndim == 1:
+                    ref = ref.unsqueeze(0)
+            # If reference images are provided, use them
+            elif self.cfg.use_reference_condition and ref_images:
                 ref = self.ref_encoder(ref_images, device=device).to(device=device).clone()
                 if ref.shape[0] > 1:
                     ref = ref.mean(dim=0, keepdim=True)

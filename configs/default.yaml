@@ -20,9 +20,12 @@ models:
   torch_dtype: float16
 
 retrieval:
+  enabled: true
   k_default: 3
   embedding_key: bioclip_text  # which embedding backs the FAISS index
   index_name: species_index
+  embedding_name: species_index_image_embeddings
+  id_map_name: species_index_id_to_image.json
 
 training:
   output_dir: outputs/train_runs

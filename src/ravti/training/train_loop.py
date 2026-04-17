@@ -15,6 +15,7 @@ from ravti.encoders.bioclip_taxon import BioCLIPTaxonEncoder
 from ravti.encoders.semantic_sdxl import SDXLSemanticTextEncoder
 from ravti.models.projections import TaxonRefProjectionBundle
 from ravti.models.triple_stream_conditioning import TripleStreamConditioning
+from ravti.retrieval.bio_retrieval import PrecomputedVisualBioRetriever
 from ravti.training.sdxl_adapter_trainer import SDXLAdapterTrainer, TrainerConfig
 
 
@@ -68,6 +69,7 @@ def _append_train_log(
 
 
 def _init_train_log(log_path: Path, cfg: dict, dtype: torch.dtype) -> None:
+    """Initialize the train log file with the experiment configuration"""
     log_path.parent.mkdir(parents=True, exist_ok=True)
     train_cfg = cfg.get("training") or {}
     with log_path.open("w", encoding="utf-8") as f:
@@ -92,6 +94,7 @@ def train_loop_from_config(cfg: dict, device: torch.device, dtype: torch.dtype) 
     models_cfg = cfg.get("models") or {}
     train_cfg = cfg.get("training") or {}
     use_reference_condition = bool(train_cfg.get("use_reference_condition", True))
+    retrieval_cfg = cfg.get("retrieval") or {}
 
     pipe = StableDiffusionXLPipeline.from_pretrained(
         models_cfg.get("sdxl_model_id"),
@@ -121,6 +124,19 @@ def train_loop_from_config(cfg: dict, device: torch.device, dtype: torch.dtype) 
             use_reference_condition=use_reference_condition,
         ),
     )
+    retriever = None
+    if use_reference_condition and bool(retrieval_cfg.get("enabled", False)):
+        from ravti.config import resolve_paths
+
+        paths = resolve_paths(cfg)
+        index_name = str(retrieval_cfg.get("index_name", "species_index"))
+        embedding_name = str(retrieval_cfg.get("embedding_name", f"{index_name}_image_embeddings"))
+        retriever = PrecomputedVisualBioRetriever.from_precomputed(
+            index_dir=paths.index_dir,
+            index_name=index_name,
+            embedding_name=embedding_name,
+            taxon_encoder=tax,
+        )
 
     dl = build_ravti_train_dataloader(cfg)
     max_steps = int(train_cfg.get("max_train_steps", 1000))
@@ -147,14 +163,25 @@ def train_loop_from_config(cfg: dict, device: torch.device, dtype: torch.dtype) 
                     break
                 species = batch["species_texts"][i]
                 taxon_line = batch["taxonomy_lines"][i]
+                sample_id = str((batch.get("sample_ids") or [f"sample_{i}"])[i])
                 prompt = prompt_tmpl.format(species=species, taxonomy=taxon_line)
-                pil_ref = _tensor_to_pil(pixels[i]) if use_reference_condition else None
+                ref_vector = None
+                if retriever is not None:
+                    ref_vector, _hits = retriever.retrieve_embedding(
+                        species_query=species,
+                        k=int(retrieval_cfg.get("k_default", 3)),
+                        device=device,
+                        fallback_queries=[taxon_line] if taxon_line != species else None,
+                        exclude_ids={sample_id},
+                    )
+                pil_ref = _tensor_to_pil(pixels[i]) if (use_reference_condition and ref_vector is None) else None
                 try:
                     loss = trainer.training_step(
                         pixels=pixels[i : i + 1],
                         prompt=prompt,
                         taxon_string=taxon_line,
                         ref_images=([pil_ref] if pil_ref is not None else None),
+                        ref_vector=ref_vector,
                         cmc=cmc_default,
                         device=device,
                         dtype=dtype,

@@ -59,6 +59,7 @@ class INaturalistRAVTIDataset(Dataset):
             "species_text": species_text,
             "taxonomy_line": taxonomy_line,
             "dataset": "inaturalist",
+            "sample_id": f"inaturalist:{index}",
             "raw_category_dir": folder,
             "index": index,
         }

@@ -144,6 +144,8 @@ def ravti_collate_fn(batch: list[dict[str, Any]]) -> dict[str, Any]:
         "pixels": images,
         "species_texts": [b["species_text"] for b in batch],
         "taxonomy_lines": [b.get("taxonomy_line", b["species_text"]) for b in batch],
+        "sample_ids": [str(b.get("sample_id", b.get("index", i))) for i, b in enumerate(batch)],
+        "image_paths": [b.get("image_path") for b in batch],
         "dataset": batch[0].get("dataset", "unknown"),
     }
 

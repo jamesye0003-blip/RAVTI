@@ -130,11 +130,14 @@ def run_train_smoke(cfg: dict, device: torch.device, dtype: torch.dtype) -> None
     )
     prompt = prompt_tmpl.format(species=species, taxonomy=taxon_line)
     pil_ref = _tensor_to_pil(pixels[0]) if use_reference_condition else None
+    
+    # In smoke test, we don't have reference images, so we pass None for ref_images
     loss = trainer.training_step(
         pixels=pixels[0:1],
         prompt=prompt,
         taxon_string=taxon_line,
         ref_images=([pil_ref] if pil_ref is not None else None),
+        ref_vector=None,
         cmc=float(train_cfg.get("cmc_train_default", 0.5)),
         device=device,
         dtype=dtype,
