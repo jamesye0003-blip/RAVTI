@@ -29,15 +29,15 @@ retrieval:
 
 training:
   output_dir: outputs/train_runs
-  save_every_steps: 50
-  max_train_steps: 1000
+  save_every_steps: 5
+  max_train_steps: 100
   image_size: 512
   prompt_template: "wildlife photograph of {species}, natural lighting, sharp focus"
   cmc_train_default: 0.5
   # Kept for readability; effective batch size is ``dataset.dataloader.batch_size``.
   train_batch_size: 1
   gradient_accumulation_steps: 1
-  learning_rate: 1.0e-5
+  learning_rate: 5.0e-4
   mixed_precision: bf16
   # Unified architecture always uses projection + decoupled cross-attention.
   # This switch only controls whether to inject retrieved reference-image condition.

@@ -53,6 +53,22 @@ def _save_checkpoint(
     return ckpt_path
 
 
+def _ref_source_label(
+    use_reference_condition: bool,
+    retriever: PrecomputedVisualBioRetriever | None,
+    ref_vector: torch.Tensor | None,
+    pil_ref: Image.Image | None,
+) -> str:
+    """How the reference stream was supplied this step (for logs / debugging)."""
+    if not use_reference_condition:
+        return "no_ref"
+    if ref_vector is not None:
+        return "retrieved"
+    if pil_ref is not None:
+        return "fallback_pil" if retriever is not None else "local_pil"
+    return "empty"
+
+
 def _append_train_log(
     log_path: Path,
     step: int,
@@ -60,11 +76,12 @@ def _append_train_log(
     species: str,
     checkpoint_path: Path,
     is_final: bool,
+    ref_source: str,
 ) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as f:
         f.write(
-            f"| {int(step)} | {float(loss):.6f} | {species} | {checkpoint_path.name} | {int(is_final)} |\n"
+            f"| {int(step)} | {float(loss):.6f} | {species} | {ref_source} | {checkpoint_path.name} | {int(is_final)} |\n"
         )
 
 
@@ -82,9 +99,11 @@ def _init_train_log(log_path: Path, cfg: dict, dtype: torch.dtype) -> None:
         f.write(f"- max_train_steps: {train_cfg.get('max_train_steps', 1000)}\n")
         f.write(f"- save_every_steps: {train_cfg.get('save_every_steps', 10)}\n")
         f.write(f"- use_reference_condition: {train_cfg.get('use_reference_condition', True)}\n")
+        ret_cfg = cfg.get("retrieval") or {}
+        f.write(f"- retrieval.enabled: {bool(ret_cfg.get('enabled', False))}\n")
         f.write("\n")
-        f.write("| step | loss | species | checkpoint | is_final |\n")
-        f.write("|------|------|---------|------------|----------|\n")
+        f.write("| step | loss | species | ref_source | checkpoint | is_final |\n")
+        f.write("|------|------|---------|------------|------------|----------|\n")
 
 
 def train_loop_from_config(cfg: dict, device: torch.device, dtype: torch.dtype) -> None:
@@ -155,6 +174,15 @@ def train_loop_from_config(cfg: dict, device: torch.device, dtype: torch.dtype) 
 
     pbar = tqdm(total=max_steps, desc="train", dynamic_ncols=True)
     step = 0
+    ref_stats: dict[str, int] = {
+        "retrieved": 0,
+        "fallback_pil": 0,
+        "local_pil": 0,
+        "no_ref": 0,
+        "empty": 0,
+    }
+    oom_steps = 0
+    last_ref_source = "n/a"
     while step < max_steps:
         for batch in dl:
             pixels = batch["pixels"].to(device=device, dtype=dtype)
@@ -175,6 +203,9 @@ def train_loop_from_config(cfg: dict, device: torch.device, dtype: torch.dtype) 
                         exclude_ids={sample_id},
                     )
                 pil_ref = _tensor_to_pil(pixels[i]) if (use_reference_condition and ref_vector is None) else None
+                ref_source = _ref_source_label(use_reference_condition, retriever, ref_vector, pil_ref)
+                last_ref_source = ref_source
+                ref_stats[ref_source] = ref_stats.get(ref_source, 0) + 1
                 try:
                     loss = trainer.training_step(
                         pixels=pixels[i : i + 1],
@@ -192,12 +223,15 @@ def train_loop_from_config(cfg: dict, device: torch.device, dtype: torch.dtype) 
                         trainer.optimizer.zero_grad(set_to_none=True)
                         if torch.cuda.is_available():
                             torch.cuda.empty_cache()
-                        pbar.set_postfix(loss=float("nan"), species=species[:32], oom=1)
+                        oom_steps += 1
+                        pbar.set_postfix(
+                            loss=float("nan"), species=species[:32], ref=ref_source, oom=1
+                        )
                         pbar.update(1)
                         step += 1
                         continue
                     raise
-                pbar.set_postfix(loss=float(loss), species=species[:32])
+                pbar.set_postfix(loss=float(loss), species=species[:32], ref=ref_source)
                 pbar.update(1)
                 step += 1
                 if save_every > 0 and step % save_every == 0:
@@ -209,6 +243,7 @@ def train_loop_from_config(cfg: dict, device: torch.device, dtype: torch.dtype) 
                         species=species,
                         checkpoint_path=ckpt_path,
                         is_final=False,
+                        ref_source=ref_source,
                     )
             if step >= max_steps:
                 break
@@ -224,4 +259,13 @@ def train_loop_from_config(cfg: dict, device: torch.device, dtype: torch.dtype) 
         species=species if "species" in locals() else "n/a",
         checkpoint_path=final_ckpt,
         is_final=True,
+        ref_source=last_ref_source,
     )
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write("\n## Reference stream mix (completed steps)\n\n")
+        total_ref = sum(ref_stats.values())
+        for label, n in sorted(ref_stats.items(), key=lambda x: -x[1]):
+            pct = 100.0 * n / total_ref if total_ref else 0.0
+            f.write(f"- {label}: {n} ({pct:.1f}%)\n")
+        if oom_steps:
+            f.write(f"- oom_skipped_steps: {oom_steps}\n")
