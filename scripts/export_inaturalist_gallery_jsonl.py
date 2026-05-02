@@ -7,7 +7,7 @@ so train-time `exclude_ids` matches gallery rows.
 Example:
   conda activate ai_full
   pip install -e .
-  python scripts/export_inaturalist_gallery_jsonl.py --config configs/default.yaml
+  python scripts/export_inaturalist_gallery_jsonl.py --config configs/inaturalist.yaml
   python scripts/build_retrieval_index.py --manifest data/metadata/inat_mini_gallery.jsonl
 """
 

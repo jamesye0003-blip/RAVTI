@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import open_clip
 import torch
 import torch.nn as nn
+from ravti.taxonomy_text import canonical_taxonomy_line
 
 
 @dataclass
@@ -34,7 +35,9 @@ class BioCLIPTaxonEncoder(nn.Module):
 
     @torch.inference_mode()
     def forward(self, taxon_strings: list[str]) -> torch.Tensor:
-        tokens = self.tokenizer(taxon_strings)
+        """Encode a list of taxon strings into a tensor of features."""
+        normed = [canonical_taxonomy_line(s, str(s or "").strip()) for s in taxon_strings]
+        tokens = self.tokenizer(normed)
         tokens = tokens.to(next(self.model.parameters()).device)
         feats = self.model.encode_text(tokens)
         feats = feats / feats.norm(dim=-1, keepdim=True).clamp(min=1e-6)

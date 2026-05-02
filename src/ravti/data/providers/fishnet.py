@@ -8,6 +8,7 @@ from typing import Any, Callable, Optional
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.datasets import ImageFolder
+from ravti.taxonomy_text import canonical_taxonomy_line
 
 
 @dataclass
@@ -26,7 +27,22 @@ def _species_from_class_folder(name: str) -> str:
 
 
 class FishNetImageFolderDataset(Dataset):
-    """FishNet as torchvision ImageFolder: each class directory = one species label."""
+    """
+    Class FishNetImageFolderDataset (Inherit from Dataset class): It is used to load the FishNet dataset from a image folder.
+    
+    Each class directory = one species label.
+    The image folder should contain the following structure:
+    - root/
+        - species1/
+            - image1.jpg
+            - image2.jpg
+            - ...
+        - species2/
+            - image1.jpg
+            - image2.jpg
+            - ...
+        - ...
+    """
 
     def __init__(self, root: Path, image_transform: Optional[Callable[[Image.Image], Any]] = None) -> None:
         self._ds = ImageFolder(str(root))
@@ -45,7 +61,7 @@ class FishNetImageFolderDataset(Dataset):
         return {
             "image": img,
             "species_text": species_text,
-            "taxonomy_line": species_text,
+            "taxonomy_line": canonical_taxonomy_line(species_text, species_text),
             "dataset": "fishnet",
             "sample_id": f"fishnet:{path}",
             "image_path": str(path),
@@ -54,7 +70,21 @@ class FishNetImageFolderDataset(Dataset):
 
 
 class FishNetManifestCSVDataset(Dataset):
-    """FishNet from CSV manifest: paths + species (+ optional taxonomy)."""
+    """
+    Class FishNetManifestCSVDataset (Inherit from Dataset class): It is used to load the FishNet dataset from a CSV manifest.
+
+    The CSV manifest should contain the following columns (required):
+    - image_path: The path to the image relative to the root directory.
+    - species: The species of the image.
+    - taxonomy_column: The column containing the taxonomy of the image.
+    - image_transform: The transform to apply to the image.
+    - image_column: The column containing the path to the image.
+    - species_column: The column containing the species of the image.
+    - taxonomy_column: The column containing the taxonomy of the image.
+    - image_transform: The transform to apply to the image.
+    - image_column: The column containing the path to the image.
+    - species_column: The column containing the species of the image.
+    """
 
     def __init__(self, cfg: FishNetDatasetConfig) -> None:
         if cfg.manifest_csv is None:
@@ -77,7 +107,8 @@ class FishNetManifestCSVDataset(Dataset):
             path = self.cfg.root / path
         img = Image.open(path).convert("RGB")
         species = row[self.cfg.species_column].strip()
-        tax_line = row[self.cfg.taxonomy_column].strip() if self.cfg.taxonomy_column and self.cfg.taxonomy_column in row else species
+        tax_raw = row[self.cfg.taxonomy_column].strip() if self.cfg.taxonomy_column and self.cfg.taxonomy_column in row else species
+        tax_line = canonical_taxonomy_line(tax_raw, species)
         if self.cfg.image_transform is not None:
             img = self.cfg.image_transform(img)
         return {

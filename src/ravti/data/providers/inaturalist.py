@@ -7,6 +7,7 @@ from typing import Any, Callable, Optional
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.datasets import INaturalist
+from ravti.taxonomy_text import canonical_taxonomy_line
 
 
 def parse_inaturalist_2021_folder_name(folder_name: str) -> tuple[str, str]:
@@ -19,7 +20,7 @@ def parse_inaturalist_2021_folder_name(folder_name: str) -> tuple[str, str]:
     if len(parts) >= 8 and len(parts[0]) == 5 and parts[0].isdigit():
         *_, genus, species_ep = parts[1:8]
         species_binomial = f"{genus} {species_ep}"
-        taxonomy_line = " > ".join(parts[1:8])
+        taxonomy_line = canonical_taxonomy_line(" > ".join(parts[1:8]), species_binomial)
         return species_binomial, taxonomy_line
     return folder_name, folder_name
 
@@ -33,7 +34,12 @@ class INaturalistDatasetConfig:
 
 
 class INaturalistRAVTIDataset(Dataset):
-    """iNaturalist (torchvision) exposed as dict samples for RAVTI."""
+    """
+    Class INaturalistRAVTIDataset (Inherit from Dataset class): It is used to load the iNaturalist dataset from a torchvision INaturalist dataset.
+
+    The iNaturalist dataset is a dataset of images of species of life.
+    The dataset is a torchvision INaturalist dataset, which is a dict of samples, downloaded from the iNaturalist website.
+    """
 
     def __init__(self, cfg: INaturalistDatasetConfig) -> None:
         self.cfg = cfg

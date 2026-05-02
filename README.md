@@ -9,12 +9,12 @@
 
 | 路径                                | 存放内容                                                                                                                                                                                                                                             |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `**configs/`**                    | 实验 YAML 配置：模型 Hub ID、数据流式源、训练超参、检索与 sweep、基线/消融开关等。入口一般为 `default.yaml`。                                                                                                                                                                         |
+| `**configs/`**                    | 实验 YAML 配置：模型 Hub ID、数据流式源、训练超参、检索与 sweep、基线/消融开关等。入口建议按数据集拆分（`inaturalist.yaml` / `fishnet.yaml`）。                                                                                                                                                                         |
 | `**src/ravti/**`                  | Python 包根：`__init__.py`、`paths.py`（仓库根解析）、`config.py`（加载/合并 YAML、解析 `data/` 等路径）。                                                                                                                                                                |
 | `**src/ravti/encoders/**`         | 多模态编码器：**SDXL 双文本塔**（语义/风格）、**BioCLIP 文本**（分类学字符串）、**BioCLIP-2 图像**（参考图形态）。均为「推理封装 + 冻结权重」为主。                                                                                                                                                    |
 | `**src/ravti/retrieval/`**        | **Bio-Retrieval**：FAISS 向量索引（`faiss_index.py`）、物种查询 + top‑k 命中（`bio_retrieval.py`）。                                                                                                                                                              |
 | `**src/ravti/models/`**           | **可训练/可替换**部分：`projections.py`（BioCLIP/BioCLIP-2 → SDXL 2048 维线性投影）、`triple_stream_conditioning.py`（在 `prompt_embeds` 序列末尾拼接 taxonomy/reference token）、`reliability.py`（由 CMC 得到 \lambda 的简化映射）、`decoupled_attention.py`（UNet 解耦交叉注意力实现）。 |
-| `**src/ravti/data/`**             | 数据层：**统一入口** `build.py`（`dataset.provider` → `DataLoader`）、**`providers/`**（`inaturalist.py` / `fishnet.py` / `treeoflife.py` 三个后端）、`metadata_store.py`、`streaming_datasets.py`（可选 HF 通用流式封装）。 |
+| `**src/ravti/data/`**             | 数据层：**统一入口** `build.py`（优先 `train_manifest_jsonl`，否则 `dataset.provider` → `DataLoader`）、**`providers/`**（`manifest.py` / `inaturalist.py` / `fishnet.py` / `treeoflife.py`）。 |
 | `**src/ravti/training/`**         | **训练流水线**：`SDXLAdapterTrainer`（单步损失）、`train_loop.py`（按 YAML 多步遍历 `DataLoader`）、入口脚本 `scripts/train_ravti.py`。                                                                                                                                        |
 | `**src/ravti/eval/`**             | **评估**：CAS@1 占位（接入你自己的 iNat21 上 ResNet 等分类器权重）、语义指标（BERTScore；多 LLM 描述对比可在此扩展）。                                                                                                                                                                  |
 | `**src/ravti/experiments/`**      | **实验驱动**：`smoke.py` 分阶段冒烟（数据 → 元数据 → 检索 → 可选 SDXL 一步训练 → 评估）。                                                                                                                                                                                    |
@@ -42,7 +42,7 @@
   ```
 3. 安装/确认本课题常用依赖（若尚未安装）：
   ```powershell
-   pip install diffusers accelerate open_clip_torch faiss-cpu bert-score pyyaml
+   pip install diffusers accelerate open_clip_torch faiss-cpu pyyaml
   ```
 4. **Pillow 版本**：`datasets` 对流式图像解码需要较新的 Pillow。若出现 `PIL.Image.ExifTags` 相关错误，建议：
   ```powershell
@@ -60,7 +60,7 @@
 
 | 组件                | 配置键 / 来源                                                                                   | 说明                                        |
 | ----------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------- |
-| **SDXL Base**     | `configs/default.yaml` → `models.sdxl_model_id`：`stabilityai/stable-diffusion-xl-base-1.0` | 体积大，首次 `from_pretrained` 会长时间下载；需足够磁盘与显存。 |
+| **SDXL Base**     | `configs/inaturalist.yaml`（或 `configs/fishnet.yaml`）→ `models.sdxl_model_id`：`stabilityai/stable-diffusion-xl-base-1.0` | 体积大，首次 `from_pretrained` 会长时间下载；需足够磁盘与显存。 |
 | **BioCLIP 文本**    | `models.bioclip_text_hub`：`hf-hub:imageomics/bioclip-vit-b-16-inat-only`                   | 通过 `open_clip` 拉取。                        |
 | **BioCLIP-2 图像**  | `models.bioclip2_image_hub`：`hf-hub:imageomics/bioclip-2`                                  | 同上；作参考图视觉流。                               |
 | **BERTScore（可选）** | 语义指标首次调用时可能拉 RoBERTa 等                                                                     | 需联网一次。                                    |
@@ -72,7 +72,7 @@
 
 ### 步骤 3：准备数据集（统一接口 `dataset.provider`）
 
-训练与冒烟脚本均通过 `ravti.data.build.build_ravti_train_dataloader(cfg)` 取数，由 `configs/default.yaml` 的 **`dataset.provider`** 选择后端（**默认：`inaturalist_mini`**）。
+训练与冒烟脚本均通过 `ravti.data.build.build_ravti_train_dataloader(cfg)` 取数，由配置中的 **`dataset.provider`** 选择后端（`configs/inaturalist.yaml` 默认 `inaturalist_mini`，`configs/fishnet.yaml` 默认 `fishnet`）。
 
 | `provider` 取值 | 实现与典型用途 | 你需要准备的内容 |
 | ---------------- | -------------- | ---------------- |
@@ -86,28 +86,24 @@
 
 **离线/CI（不下载真实数据）**：设置环境变量 **`RAVTI_SYNTHETIC_DATA=1`** 时，`build_ravti_dataset` 返回小型合成 `Dataset`，便于在无网环境验证导入与训练循环。可调 `dataset.synthetic.num_samples`。
 
-**可选**：`src/ravti/data/streaming_datasets.py` 中的 `HfStreamingImageIterable` 仍可用于**自定义** Hugging Face 数据集实验，但不作为默认训练路径。
-
 ---
 
 ### 步骤 4：元数据与检索索引（Bio-Retrieval）
 
-1. **SQLite 元数据（可选但利于 O(1) 查表）**
-  - 冒烟脚本会创建示例库：`data/metadata/ravti.sqlite`。正式实验时可在你的数据准备脚本中调用 `MetadataStore.upsert_sample` 写入 `external_id`、`species_name`、`taxonomy_json` 等。
-2. **FAISS 索引**
+1. **FAISS 索引**
   - 准备 JSONL manifest，每行至少包含：`{"species": "...", "image_path": "..."}`（`image_path` 可用于后续扩展为图像向量索引；当前示例索引脚本以 **物种名的 BioCLIP 文本向量** 为主）。  
   - 构建命令示例：
     ```powershell
     python scripts\build_retrieval_index.py --manifest data\metadata\gallery.jsonl --name species_index
     ```
   - 产物默认在 `data/indices/<name>.faiss` 与同前缀 `.jsonl`。
-3. **检索参数**：`retrieval.k_default` 与消融中的 **k-sweep** 在配置 `sweeps.k_values` 与脚本 `scripts/run_sweep.py` 中体现。
+2. **检索参数**：`retrieval.k_default` 与消融中的 **k-sweep** 在配置 `sweeps.k_values` 与脚本 `scripts/run_sweep.py` 中体现。
 
 ---
 
 ### 步骤 5：打通训练 Pipeline
 
-1. **检查配置**：编辑 `configs/default.yaml`（`dataset.provider`、`dataset.inaturalist` / `fishnet` / `treeoflife`、`training.max_train_steps`、`training.save_every_steps`、`training.output_dir`、`training.image_size`、`training.prompt_template`、`training.cmc_train_default`、学习率与混合精度、`lambda_*` 等）。
+1. **检查配置**：编辑 `configs/inaturalist.yaml` 或 `configs/fishnet.yaml`（`dataset.provider`、`dataset.inaturalist` / `fishnet` / `treeoflife`、`training.max_train_steps`、`training.save_every_steps`、`training.output_dir`、`training.image_size`、`training.prompt_template`、学习率与混合精度、`lambda_*` 等）。
 2. **快速验证（不拉 SDXL 大权重）**：
   ```powershell
    python -m ravti.experiments.smoke --stage all --skip-train
@@ -126,7 +122,7 @@
    python scripts\train_ravti.py
   ```
    若 `max_train_steps` 大于**一个 epoch** 的步数，对 **Map 型**数据集（iNat / FishNet ImageFolder）会自动进入下一轮 epoch；对 **流式 TreeOfLife** 仅跑一遍流（耗尽即停）。
-   训练中会按 `training.save_every_steps`（默认 **10**）保存中间 checkpoint，并在结束时额外写出 `adapter_final.pt` 到 `training.output_dir`。同目录下还会生成带启动时间戳的日志文件（例如 `train_log_202604130551.txt`），以 Markdown 表格记录每次 checkpoint 对应的 `step/loss/species` 等信息，并在文件头写明关键超参数。
+   训练中会按 `training.save_every_steps`（默认 **10**）写出中间权重：`use_reference_condition: false` 时为 `taxaAdapter_000010.pt` 形式，为 `true` 时为 `ravti_000010.pt`；若最后一步未落在该间隔上，会再存一个尾步 checkpoint。同一 run 时间戳下，**在这些已落盘的 checkpoint 里按当时记录的 loss 选最优**，将对应文件复制为 `taxaAdapter_best_<时间戳>.pt` / `ravti_best_<时间戳>.pt`（不在每一步做快照）。loss 曲线 CSV/PNG 仅在这些保存点上取数（`taxaAdapter_loss_<时间戳>.csv/.png` 等；无 matplotlib 则仅 CSV）。另有 `train_log_<时间戳>.txt`。
 
 **设计说明（与论文计划对齐）**：当前统一使用 **projection + decoupled cross-attention**。`training.use_reference_condition` 是唯一结构开关：为 `true` 时注入 taxonomy + reference 两路条件；为 `false` 时只注入 taxonomy 条件（等价于 TaxaAdapter 风格基线）。Checkpoint / W&B 等可在 `train_loop_from_config` 上自行加钩子。
 
@@ -134,18 +130,19 @@
 
 ### 步骤 6：评估性能
 
-1. **CAS@1**
-  - 训练或推理得到生成图后，用你在 iNat21（或 FishNet）上训好的分类器做 top-1 物种命中率。  
-  - 将模型权重路径写入 `evaluation.cas_classifier`，并在 `eval/cas_metric.py` 中把占位逻辑替换为真实 `forward`。
-2. **多 LLM 语义指标（BioCAP 风格）**
-  - 流程：对「生成图 vs 真值图」分别用 **GPT-4o / InternVL** 生成性状描述 → 文本侧用 **BERTScore** 或句向量余弦比较。  
-  - 当前 `eval/semantic_metric.py` 已实现 **BERTScore** 路径；LLM 调用需你自行接 API 与 prompt，再把两段描述传入 `compare_from_llm_descriptions`。
+1. **CAS@1 / CAS@5**
+  - 训练或推理得到生成图后，用你在 iNat21（或 FishNet）上训好的分类器做 top-1 / top-5 物种命中率。  
+  - 将模型权重路径写入 `evaluation.cas_classifier`；加载与打分逻辑见 `src/ravti/eval/classification_accuracy.py`。
+2. **T2I 对齐（TaxaAdapter 风格）**
+  - `src/ravti/eval/t2i_alignment.py`：**CLIP** 为生成图 vs **物种俗名**；**BioCLIP** 为生成图 vs **分类学名称串**（`taxonomy_line`）。
+3. **图像质量（预留）**
+  - `src/ravti/eval/image_quality.py` 中为 **FID / LPIPS** 占位接口，后续可接入实现。
 
 ---
 
 ### 步骤 7：基线（B1 / B2）
 
-在 `configs/default.yaml` 的 `**baselines`** 段已用开关语义描述：
+在 `configs/inaturalist.yaml` / `configs/fishnet.yaml` 的 `**baselines`** 段已用开关语义描述：
 
 
 | 基线                    | 含义                                      | 在代码中的落地方式（需你在训练/推理分支中读取配置）                                  |

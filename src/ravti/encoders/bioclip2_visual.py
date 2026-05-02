@@ -34,6 +34,10 @@ class BioCLIP2VisualEncoder(nn.Module):
 
     @torch.inference_mode()
     def forward(self, images: list[Image.Image], device: torch.device) -> torch.Tensor:
+        """
+        Encode a list of images into a tensor of features, and normalize the features to unit length.
+        The output tensor has shape [N, D] where N is the number of images and D is the embedding dimension.
+        """
         tensors = torch.stack([self.preprocess(im.convert("RGB")) for im in images]).to(
             device=device, dtype=next(self.model.parameters()).dtype
         )

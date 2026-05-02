@@ -43,7 +43,7 @@ def _normalize_record(rec: dict, default_id: int) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, default=str(project_root() / "configs" / "default.yaml"))
+    parser.add_argument("--config", type=str, default=str(project_root() / "configs" / "inaturalist.yaml"))
     parser.add_argument("--manifest", type=Path, required=True, help="JSONL with species + image_path")
     parser.add_argument("--name", type=str, default=None)
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size for image embedding precompute")

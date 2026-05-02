@@ -43,6 +43,7 @@ class BioRetriever(RetrievalBackend):
         fallback_queries: Optional[list[str]] = None,
         exclude_ids: Optional[set[str]] = None,
     ) -> list[RetrievalHit]:
+        """Retrieve the top-k gallery samples"""
         queries = [species_query]
         if fallback_queries:
             queries.extend(fallback_queries)
@@ -88,6 +89,7 @@ class PrecomputedVisualBioRetriever(RetrievalBackend):
         embedding_name: str,
         taxon_encoder: BioCLIPTaxonEncoder,
     ) -> "PrecomputedVisualBioRetriever":
+        """Load the PrecomputedVisualBioRetriever from the index directory"""
         index = FaissRetrievalIndex.load(index_dir, index_name)
         embedding_path = index_dir / f"{embedding_name}.npy"
         emb = np.load(embedding_path).astype("float32")
@@ -101,6 +103,7 @@ class PrecomputedVisualBioRetriever(RetrievalBackend):
         fallback_queries: Optional[list[str]] = None,
         exclude_ids: Optional[set[str]] = None,
     ) -> list[RetrievalHit]:
+        """Retrieve the top-k gallery samples"""
         return self._text_retriever.retrieve(
             species_query=species_query,
             k=k,
@@ -117,6 +120,7 @@ class PrecomputedVisualBioRetriever(RetrievalBackend):
         fallback_queries: Optional[list[str]] = None,
         exclude_ids: Optional[set[str]] = None,
     ) -> tuple[Optional[torch.Tensor], list[RetrievalHit]]:
+        """Retrieve the embedding of the top-k gallery samples"""
         hits = self.retrieve(
             species_query=species_query,
             k=k,
@@ -138,9 +142,26 @@ class PrecomputedVisualBioRetriever(RetrievalBackend):
         if not rows:
             return None, hits
         mat = np.stack(rows, axis=0)
-        # Trainer currently consumes one reference token, so we aggregate top-k.
-        mean_vec = mat.mean(axis=0, keepdims=True)
-        vec = torch.from_numpy(mean_vec).to(device=device)
+        
+        # # Trainer currently consumes one reference token, so we aggregate top-k.
+        # mean_vec = mat.mean(axis=0, keepdims=True)
+        # vec = torch.from_numpy(mean_vec).to(device=device)
+        
+        # Weighted top-k aggregation by FAISS similarity scores.
+        scores = np.array([float(h.score) for h in hits], dtype=np.float32)
+        if scores.shape[0] != mat.shape[0]:
+            # Conservative fallback if metadata rows were filtered.
+            w = np.ones((mat.shape[0],), dtype=np.float32) / max(mat.shape[0], 1)
+        else:
+            s = scores - float(scores.max())
+            w = np.exp(s)
+            sw = float(w.sum())
+            if sw <= 0.0:
+                w = np.ones_like(w) / max(len(w), 1)
+            else:
+                w = w / sw
+        weighted = (mat * w[:, None]).sum(axis=0, keepdims=True)
+        vec = torch.from_numpy(weighted.astype("float32")).to(device=device)
         return vec, hits
 
 
@@ -150,6 +171,7 @@ def precompute_visual_embeddings(
     device: torch.device,
     batch_size: int = 32,
 ) -> np.ndarray:
+    """Precompute the visual embeddings for the image paths"""
     feats: list[np.ndarray] = []
     from PIL import Image
 
