@@ -6,6 +6,9 @@ This repository is intended for **reproducing the FishNet-oriented experiments**
 
 ---
 
+## Authors
+Yuwei Ye, Wancheng Lin
+
 ## Requirements
 
 - **Python** ≥ 3.10  
