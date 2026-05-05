@@ -39,12 +39,18 @@ runs/
 *.log
 
 # --- Data: downloads, caches, built indices, local DBs (keep YAML + code only) ---
+data/
 data/cache/
 data/datasets/
 data/metadata/*.sqlite
 data/metadata/*.db
+
+# --- Large local gallery manifests (regenerate with scripts/export_inaturalist_gallery_jsonl.py) ---
+data/metadata/*.jsonl
 data/indices/
 data/parquet/*.parquet
+
+docs/
 
 # --- Dataset archives (if extracted under repo) ---
 *.zip

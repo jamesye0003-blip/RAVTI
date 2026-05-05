@@ -75,5 +75,6 @@ class TreeOfLifeStreamingDataset(IterableDataset):
             "species_text": species_text,
             "taxonomy_line": taxonomy_line,
             "dataset": "treeoflife_10m",
+            "sample_id": f"treeoflife:{index}",
             "index": index,
         }

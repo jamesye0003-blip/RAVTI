@@ -6,13 +6,13 @@ from typing import Optional
 
 
 class TaxonRefProjectionBundle(nn.Module):
-    """Learnable linear maps from BioCLIP / BioCLIP-2 spaces into SDXL cross-attn width."""
+    """Learnable linear maps from BioCLIP / BioCLIP-2 spaces into Stable Diffusion XL cross-attn width."""
 
     def __init__(self, taxon_dim: int, ref_dim: int, sdxl_hidden: int = 2048) -> None:
         super().__init__()
         self.taxon_proj = nn.Linear(taxon_dim, sdxl_hidden)
         self.ref_proj = nn.Linear(ref_dim, sdxl_hidden)
-        # Keep initial perturbation tiny: start close to baseline SDXL conditioning.
+        # Keep initial perturbation tiny: start close to baseline Stable Diffusion XL conditioning.
         # nn.init.xavier_uniform_(self.taxon_proj.weight)
         nn.init.normal_(self.taxon_proj.weight, mean=0.0, std=1e-3)
         nn.init.zeros_(self.taxon_proj.bias)

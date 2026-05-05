@@ -1,0 +1,153 @@
+# RAVTI FishNet experiment configuration (paths are relative to project root unless absolute)
+experiment_name: ravti_fishnet
+seed: 42
+
+paths:
+  project_root: null
+  data_root: data
+  cache_dir: data/cache
+  index_dir: data/indices/fishnet
+  metadata_db: data/metadata/fishnet/ravti.sqlite
+  local_image_datasets: []
+
+models:
+  sdxl_model_id: stabilityai/stable-diffusion-xl-base-1.0
+  vae_model_id: null
+  bioclip_text_hub: hf-hub:imageomics/bioclip-vit-b-16-inat-only
+  bioclip2_image_hub: hf-hub:imageomics/bioclip-2
+  torch_dtype: float16
+
+retrieval:
+  enabled: true
+  k_default: 3
+  embedding_key: bioclip_text
+  index_name: fishnet_species_index
+  embedding_name: fishnet_species_index_image_embeddings
+  id_map_name: fishnet_species_index_id_to_image.json
+
+training:
+  output_dir: outputs/train_runs
+  # save_every_steps: 50
+  # max_train_steps: 1194
+  save_every_epochs: 1
+  max_train_epochs: 100
+  use_early_stopping: true
+  tolerance: 5
+  image_size: 512
+  prompt_template: "a photograph of {species}"
+  train_batch_size: 1
+  gradient_accumulation_steps: 1
+  learning_rate: 5.0e-4
+  mixed_precision: bf16
+  use_reference_condition: true
+  log_every: 10
+  sdxl_hidden_size: 2048
+  lambda_tax_base: 0.35
+  lambda_ref_base: 0.25
+
+dataset:
+  provider: fishnet
+  split:
+    train_manifest_jsonl: data/metadata/splits/fishnet/fishnet_curated_k10_t1/train_manifest.jsonl
+    eval_manifest_jsonl: data/metadata/splits/fishnet/fishnet_curated_k10_t1/eval_manifest.jsonl
+  dataloader:
+    batch_size: 2
+    num_workers: 0
+    shuffle: true
+    pin_memory: true
+  synthetic:
+    num_samples: 128
+  inaturalist:
+    root: data/datasets/inaturalist
+    version: 2021_train_mini
+    download: false
+  fishnet:
+    root: data/datasets/FishNet
+    layout: manifest_csv
+    manifest_csv: null
+    image_column: image_path
+    species_column: species
+    taxonomy_column: taxonomy_line
+    annotation_table: data/datasets/FishNet/anns/ravti_fishnet_map.csv
+    sample_id_column: sample_id
+    taxonomy_rank_columns:
+      kingdom: kingdom
+      phylum: phylum
+      class: class
+      order: order
+      family: family
+      genus: genus
+      species: species
+  treeoflife:
+    hf_repo: imageomics/TreeOfLife-10M
+    split: train
+    streaming: true
+    trust_remote_code: false
+    image_keys: ["image", "jpg", "bytes"]
+    text_keys: ["taxonomy", "scientific_name", "species", "canonicalName", "text"]
+
+evaluation:
+  cas_classifier: outputs\cas_classifier\resnet50_2021_train_mini.pt
+  cas_classifier_arch: resnet50
+  cas_num_classes: 10
+  cas_image_size: 224
+  metrics:
+    clip_common_name: true
+    bioclip_taxonomic: true
+    cas_at_1: true
+    cas_at_5: true
+  clip_model_name: ViT-B-32
+  clip_pretrained: openai
+  llm_provider: openai
+  generation:
+    adapter_weights: trained  # P0: B1/RAVTI does not load checkpoint (random adapter); b0 is unaffected. Default trained.
+    checkpoint_components: [all]  # P1: only load specified components, optional conditioning / processors / cmc_gate / all。
+    mode: [b0_sdxl, b1_taxonomy_only, ravti]
+    adapter_checkpoint: null
+    adapter_checkpoint_by_mode: {b1_taxonomy_only: outputs/train_runs/taxaAdapter_best_202604300029.pt, ravti: outputs/train_runs/ravti_best_202604300213.pt}
+    output_dir: outputs/eval
+    run_id: null
+    processor_alpha_by_mode: {b1_taxonomy_only: 0.1, ravti: 0.2}
+    negative_prompt: ""
+    negative_taxon: ""
+    prompts_file: null
+    eval_manifest_file: data/metadata/splits/fishnet/fishnet_curated_k10_t1/eval_manifest.jsonl
+    balanced_checklist:
+      enabled: true
+      num_species: 10
+      seed: 42
+      kingdom_balance:
+        enabled: false
+        animalia_fraction: 0.5
+    fixed:
+      seed: 42
+      num_inference_steps: 50
+      height: 512
+      width: 512
+      guidance_scale: 7.5
+      processor_alpha: 0.2
+    checklist: []
+
+baselines:
+  b1_sdxl_zero_shot:
+    use_taxonomy: false
+    use_retrieval: false
+  b2_taxaadapter_style:
+    use_taxonomy: true
+    use_retrieval: false
+    lambda_ref: 0.0
+
+ablation:
+  taxonomy_only:
+    use_taxonomy: true
+    use_retrieval: false
+  rag_only:
+    use_taxonomy: false
+    use_retrieval: true
+  unified:
+    use_taxonomy: true
+    use_retrieval: true
+
+sweeps:
+  cmc_values: [0.0, 0.25, 0.5, 0.75, 1.0]
+  k_values: [1, 3, 5]

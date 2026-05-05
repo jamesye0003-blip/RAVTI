@@ -11,12 +11,15 @@ from ravti.data.providers.inaturalist import (
     INaturalistRAVTIDataset,
     parse_inaturalist_2021_folder_name,
 )
+from ravti.data.providers.manifest import ManifestDatasetConfig, ManifestRAVTIDataset
 from ravti.data.providers.treeoflife import TreeOfLifeDatasetConfig, TreeOfLifeStreamingDataset
 
 __all__ = [
     "INaturalistDatasetConfig",
     "INaturalistRAVTIDataset",
     "parse_inaturalist_2021_folder_name",
+    "ManifestDatasetConfig",
+    "ManifestRAVTIDataset",
     "FishNetDatasetConfig",
     "FishNetImageFolderDataset",
     "FishNetManifestCSVDataset",
